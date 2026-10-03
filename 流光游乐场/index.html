@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>流光游乐场</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:#06080f;color:#e9edff;overflow:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    -webkit-tap-highlight-color:transparent;user-select:none;
+  }
+  /* ---------- 背景极光 ---------- */
+  #bg{position:fixed;inset:0;z-index:0;overflow:hidden;
+    background:
+      radial-gradient(1100px 720px at 18% 6%, rgba(64,104,255,.26), transparent 62%),
+      radial-gradient(900px 700px at 88% 86%, rgba(255,64,170,.20), transparent 62%),
+      radial-gradient(760px 620px at 62% 44%, rgba(0,214,196,.14), transparent 62%),
+      #06080f;
+  }
+  .blob{position:absolute;border-radius:50%;will-change:transform}
+  .b1{width:46vmax;height:46vmax;left:-12vmax;top:-14vmax;background:radial-gradient(circle,rgba(59,107,255,.55),transparent 68%);animation:d1 34s ease-in-out infinite alternate}
+  .b2{width:40vmax;height:40vmax;right:-10vmax;bottom:-12vmax;background:radial-gradient(circle,rgba(255,75,176,.45),transparent 68%);animation:d2 41s ease-in-out infinite alternate}
+  .b3{width:34vmax;height:34vmax;left:42%;top:32%;background:radial-gradient(circle,rgba(0,217,192,.35),transparent 68%);animation:d3 47s ease-in-out infinite alternate}
+  @keyframes d1{to{transform:translate3d(12vmax,9vmax,0) scale(1.15)}}
+  @keyframes d2{to{transform:translate3d(-11vmax,-9vmax,0) scale(1.1)}}
+  @keyframes d3{to{transform:translate3d(-9vmax,10vmax,0) scale(.88)}}
+
+  canvas{position:fixed;inset:0;z-index:1;display:block;touch-action:none;cursor:crosshair}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;top:22px;left:26px;z-index:3;pointer-events:none}
+  #hud h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.14em;
+    background:linear-gradient(90deg,#dff1ff,#9fc0ff 55%,#ffb8e6);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  #hud p{margin:7px 0 0;font-size:12.5px;color:rgba(233,237,255,.46);letter-spacing:.04em}
+
+  #hint{position:fixed;left:26px;bottom:26px;z-index:3;pointer-events:none;
+    max-width:min(46vw,520px);font-size:13px;line-height:1.75;color:rgba(233,237,255,.62)}
+  #hint::before{content:"玩法";display:block;font-size:10.5px;letter-spacing:.3em;
+    color:rgba(233,237,255,.3);margin-bottom:5px}
+
+  #tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;z-index:4;
+    display:flex;gap:8px;padding:7px;border-radius:999px;
+    background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);
+    backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);
+    box-shadow:0 14px 44px rgba(0,0,0,.5)}
+  #tabs button{
+    appearance:none;border:1px solid transparent;background:transparent;color:rgba(233,237,255,.66);
+    font:inherit;font-size:13px;padding:9px 17px;border-radius:999px;cursor:pointer;
+    transition:color .18s,background .18s,transform .18s;white-space:nowrap;
+  }
+  #tabs button b{font-weight:600;font-size:10.5px;opacity:.5;margin-right:6px}
+  #tabs button:hover{color:#fff;background:rgba(255,255,255,.07)}
+  #tabs button.on{color:#06101e;background:linear-gradient(180deg,#e6f4ff,#a6d4ff);
+    box-shadow:0 5px 20px rgba(140,200,255,.38)}
+  #tabs button.on b{opacity:.45}
+
+  #hud,#hint,#tabs{transition:opacity .35s ease,transform .35s ease}
+  body.zen #hud,body.zen #hint{opacity:0}
+  body.zen #tabs{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(14px)}
+
+  @media (max-width:760px){
+    #hud{top:14px;left:16px}
+    #hud h1{font-size:16px}
+    #hud p{font-size:11px}
+    #hint{left:16px;bottom:96px;max-width:82vw;font-size:12px}
+    #tabs{bottom:14px;gap:4px;padding:5px;max-width:96vw;overflow:hidden}
+    #tabs button{padding:8px 11px;font-size:12px}
+    #tabs button b{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="bg"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i></div>
+<canvas id="c"></canvas>
+
+<header id="hud">
+  <h1>流光游乐场</h1>
+  <p>四个随手可玩的小玩具 · 按 1-4 切换 · H 隐藏界面</p>
+</header>
+
+<div id="hint"></div>
+
+<nav id="tabs">
+  <button data-i="0"><b>1</b>引力星云</button>
+  <button data-i="1"><b>2</b>万花筒</button>
+  <button data-i="2"><b>3</b>群体飞鸟</button>
+  <button data-i="3"><b>4</b>星火烟花</button>
+</nav>
+
+<script>
+(function(){
+'use strict';
+
+/* ============ 基础 ============ */
+var cvs = document.getElementById('c');
+var ctx = cvs.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+
+var pointer = {
+  x:0, y:0, px:0, py:0, down:false,
+  justDown:false, justUp:false, dbl:false, ui:false
+};
+
+function resizeCanvas(){
+  W = window.innerWidth; H = window.innerHeight;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  cvs.width = Math.round(W*DPR); cvs.height = Math.round(H*DPR);
+  cvs.style.width = W+'px'; cvs.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+function rr(g,x,y,w,h,r){
+  r = Math.min(r, w/2, h/2);
+  g.beginPath();
+  g.moveTo(x+r,y);
+  g.arcTo(x+w,y,x+w,y+h,r);
+  g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r);
+  g.arcTo(x,y,x+w,y,r);
+  g.closePath();
+}
+
+/* ============ 声音 ============ */
+var ac = null, master = null;
+function ensureAudio(){
+  if(ac){ if(ac.state === 'suspended') ac.resume(); return; }
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  ac = new AC();
+  master = ac.createGain();
+  master.gain.value = 0.16;
+  master.connect(ac.destination);
+}
+function playNote(freq, vel){
+  if(!ac) return;
+  var t = ac.currentTime;
+  var g = ac.createGain();
+  var f = ac.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = 2800; f.Q.value = 0.7;
+  var o1 = ac.createOscillator(); o1.type = 'triangle'; o1.frequency.value = freq;
+  var o2 = ac.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq*2.005;
+  var g2 = ac.createGain(); g2.gain.value = 0.22;
+  o2.connect(g2); g2.connect(f);
+  o1.connect(f); f.connect(g); g.connect(master);
+  var v = (vel === undefined ? 1 : vel) * 0.55;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0008, t+0.6);
+  o1.start(t); o2.start(t);
+  o1.stop(t+0.65); o2.stop(t+0.65);
+}
+function playKick(){
+  if(!ac) return;
+  var t = ac.currentTime;
+  var o = ac.createOscillator(); o.type = 'sine';
+  var g = ac.createGain();
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(44, t+0.13);
+  g.gain.setValueAtTime(0.9, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+0.24);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t+0.26);
+}
+function playHat(){
+  if(!ac) return;
+  var t = ac.currentTime;
+  var len = Math.floor(ac.sampleRate * 0.05);
+  var buf = ac.createBuffer(1, len, ac.sampleRate);
+  var d = buf.getChannelData(0);
+  for(var i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3);
+  var s = ac.createBufferSource(); s.buffer = buf;
+  var f = ac.createBiquadFilter(); f.type='highpass'; f.frequency.value = 7000;
+  var g = ac.createGain(); g.gain.value = 0.16;
+  s.connect(f); f.connect(g); g.connect(master);
+  s.start(t);
+}
+
+/* ============================================================
+   场景 1 —— 引力星云
+   ============================================================ */
+var star = {
+  name:'引力星云',
+  hint:'移动鼠标牵引整片星云 · 按住吸得更紧 · 点击引爆冲击波',
+  fade:0.06,
+  ps:[],
+  pulse:0,
+  resize:function(){
+    this.ps.length = 0;
+    var n = Math.round(Math.min(520, Math.max(240, (W*H)/3600)));
+    for(var i=0;i<n;i++) this.ps.push(this.born(true));
+  },
+  born:function(wide){
+    var a = Math.random()*Math.PI*2;
+    var r = wide ? (70 + Math.random()*Math.min(W,H)*0.58) : (Math.min(W,H)*0.42 + Math.random()*160);
+    var hue = Math.random() < 0.76 ? (184 + Math.random()*52) : (272 + Math.random()*46);
+    return {
+      x:W/2+Math.cos(a)*r, y:H/2+Math.sin(a)*r, vx:0, vy:0, hue:hue,
+      r0:34 + Math.random()*56, sw:0.72 + Math.random()*0.6
+    };
+  },
+  update:function(dt){
+    var mx = pointer.x, my = pointer.y, i, p;
+    if(pointer.justDown && !pointer.ui){
+      for(i=0;i<this.ps.length;i++){
+        p = this.ps[i];
+        var ox = p.x-mx, oy = p.y-my;
+        var od = Math.sqrt(ox*ox+oy*oy) + 1;
+        var imp = 1600 * (1/(1+od/260));
+        p.vx += ox/od*imp; p.vy += oy/od*imp;
+      }
+      this.pulse = 1;
+      playHat();
+    }
+    this.pulse = Math.max(0, this.pulse - dt*1.5);
+
+    var pull = pointer.down ? 6.6 : 3.0;
+    var swirl = pointer.down ? 460 : 210;
+    var damp = Math.pow(0.25, dt);
+    var lim = W*1.4;
+    for(i=0;i<this.ps.length;i++){
+      p = this.ps[i];
+      var dx = mx-p.x, dy = my-p.y;
+      var d = Math.sqrt(dx*dx+dy*dy) + 1e-4;
+      var nx = dx/d, ny = dy/d;
+      var f = (d - p.r0)*pull;
+      if(f > 950) f = 950; else if(f < -950) f = -950;
+      p.vx += nx*f*dt + (-ny*swirl*p.sw)*dt;
+      p.vy += ny*f*dt + ( nx*swirl*p.sw)*dt;
+      p.vx *= damp; p.vy *= damp;
+      var sp = Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+      if(sp > 1600){ p.vx = p.vx/sp*1600; p.vy = p.vy/sp*1600; }
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      if(p.x < -lim || p.x > W+lim || p.y < -lim || p.y > H+lim){
+        var np = this.born(false);
+        p.x = np.x; p.y = np.y; p.vx = 0; p.vy = 0;
+      }
+    }
+  },
+  draw:function(g){
+    var i, p;
+    g.globalCompositeOperation = 'lighter';
+    g.lineCap = 'round';
+    for(i=0;i<this.ps.length;i++){
+      p = this.ps[i];
+      var sp = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+      var nx = sp > 1 ? p.vx/sp : 0, ny = sp > 1 ? p.vy/sp : 0;
+      var len = Math.min(28, 3.5 + sp*0.032);
+      g.strokeStyle = 'hsla(' + p.hue + ',96%,63%,' + Math.min(0.78, 0.24 + sp/1400).toFixed(3) + ')';
+      g.lineWidth = 1.35;
+      g.beginPath();
+      g.moveTo(p.x - nx*len, p.y - ny*len);
+      g.lineTo(p.x, p.y);
+      g.stroke();
+    }
+    var mx = pointer.x, my = pointer.y, tt = performance.now()/1000;
+    if(this.pulse > 0){
+      g.strokeStyle = 'rgba(170,225,255,' + (this.pulse*0.5).toFixed(3) + ')';
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(mx, my, (1-this.pulse)*260 + 10, 0, 6.2832); g.stroke();
+    }
+    g.strokeStyle = 'rgba(190,230,255,.6)';
+    g.lineWidth = 1.2;
+    g.beginPath(); g.arc(mx, my, pointer.down ? 10 : 17, 0, 6.2832); g.stroke();
+    g.strokeStyle = 'rgba(190,230,255,.22)';
+    g.beginPath(); g.arc(mx, my, (pointer.down ? 10 : 17) + 6 + Math.sin(tt*3)*2.5, 0, 6.2832); g.stroke();
+    g.globalCompositeOperation = 'source-over';
+  }
+};
+
+/* ============================================================
+   场景 2 —— 万花筒画笔
+   ============================================================ */
+var kaleido = {
+  name:'万花筒',
+  hint:'按住拖动即可绘制 · 双击清空 · [ ] 调整对称轴数量',
+  fade:0.022,
+  n:8,
+  hue:200,
+  arms:null,
+  enter:function(){ ctx.clearRect(0,0,W,H); this.arms = null; },
+  resize:function(){ this.arms = null; },
+  key:function(k){
+    if(k === '[' && this.n > 3) this.n--;
+    else if(k === ']' && this.n < 16) this.n++;
+  },
+  update:function(dt){
+    this.hue = (this.hue + dt*30) % 360;
+    if(pointer.justDown){
+      this.arms = null;
+      if(pointer.dbl && !pointer.ui) ctx.clearRect(0,0,W,H);
+    }
+  },
+  draw:function(g){
+    if(!pointer.down){ this.arms = null; return; }
+    var cx = W/2, cy = H/2;
+    var dx = pointer.x-cx, dy = pointer.y-cy;
+    var r = Math.sqrt(dx*dx+dy*dy);
+    var base = Math.atan2(dy,dx);
+    var pts = [], i, s;
+    var signs = [1,-1];
+    for(i=0;i<this.n;i++){
+      var a = base + i*Math.PI*2/this.n;
+      for(s=0;s<2;s++){
+        pts.push({ x: cx + Math.cos(a*signs[s])*r, y: cy + Math.sin(a*signs[s])*r });
+      }
+    }
+    if(this.arms && this.arms.length === pts.length){
+      g.globalCompositeOperation = 'lighter';
+      g.lineCap = 'round';
+      for(i=0;i<pts.length;i++){
+        var a0 = this.arms[i], b0 = pts[i];
+        var d = Math.sqrt((b0.x-a0.x)*(b0.x-a0.x) + (b0.y-a0.y)*(b0.y-a0.y));
+        if(d > 260) continue;
+        var h = (this.hue + i*11) % 360;
+        g.strokeStyle = 'hsla(' + h + ',92%,66%,.5)';
+        g.lineWidth = 3.4;
+        g.beginPath(); g.moveTo(a0.x,a0.y); g.lineTo(b0.x,b0.y); g.stroke();
+        g.fillStyle = 'hsla(' + h + ',98%,72%,.4)';
+        g.beginPath(); g.arc(b0.x,b0.y,2.2,0,6.2832); g.fill();
+      }
+      g.globalCompositeOperation = 'source-over';
+    }
+    this.arms = pts;
+  }
+};
+
+/* ============================================================
+   场景 3 —— 群体飞鸟
+   ============================================================ */
+var flock = {
+  name:'群体飞鸟',
+  hint:'移动鼠标，整片鸟群跟着你飞 · 点击让它们受惊炸散 · [ ] 增减数量',
+  fade:0.11,
+  boids:[],
+  head:null,
+  gcols:0, grows:0,
+  flash:0,
+  resize:function(){
+    var n = Math.round(Math.min(520, Math.max(240, (W*H)/3600)));
+    this.boids.length = 0;
+    for(var i=0;i<n;i++) this.boids.push(this.born());
+    this.head = null;
+  },
+  born:function(){
+    var a = Math.random()*6.2832, sp = 150 + Math.random()*80;
+    return {
+      x: Math.random()*W, y: Math.random()*H,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+      hue: 182 + Math.random()*118,
+      burst: 0
+    };
+  },
+  key:function(k){
+    var i;
+    if(k === '[' && this.boids.length > 140){
+      this.boids.length = this.boids.length - 60;
+    } else if(k === ']' && this.boids.length < 900){
+      for(i=0;i<60;i++) this.boids.push(this.born());
+    }
+  },
+  update:function(dt){
+    var bs = this.boids, n = bs.length, i, j, o;
+    if(!n) return;
+
+    var cell = 34;
+    var cols = Math.ceil(W/cell) + 2, rows = Math.ceil(H/cell) + 2;
+    if(!this.head || this.gcols !== cols || this.grows !== rows){
+      this.head = new Int32Array(cols*rows);
+      this.gcols = cols; this.grows = rows;
+    }
+    var head = this.head;
+    for(i=0;i<head.length;i++) head[i] = -1;
+    for(i=0;i<n;i++){
+      var b0 = bs[i];
+      var cx0 = ((b0.x/cell)|0) + 1, cy0 = ((b0.y/cell)|0) + 1;
+      if(cx0 < 0) cx0 = 0; else if(cx0 >= cols) cx0 = cols-1;
+      if(cy0 < 0) cy0 = 0; else if(cy0 >= rows) cy0 = rows-1;
+      b0.cell = cy0*cols + cx0;
+      b0.next = head[b0.cell];
+      head[b0.cell] = i;
+    }
+
+    if(pointer.justDown && !pointer.ui){
+      for(i=0;i<n;i++){
+        var eb = bs[i];
+        var ex = eb.x-pointer.x, ey = eb.y-pointer.y;
+        var ed = Math.sqrt(ex*ex+ey*ey) + 1;
+        if(ed < 360){
+          var ek = 1 - ed/360;
+          eb.vx += ex/ed*820*ek;
+          eb.vy += ey/ed*820*ek;
+          eb.burst = 0.75;
+        }
+      }
+      this.flash = 1;
+      playHat();
+    }
+    this.flash = Math.max(0, this.flash - dt*1.6);
+
+    for(i=0;i<n;i++){
+      var b = bs[i];
+      if(b.burst > 0) b.burst -= dt;
+      var cx = b.cell % cols, cy = (b.cell / cols) | 0;
+      var sepX = 0, sepY = 0, aliX = 0, aliY = 0, cohX = 0, cohY = 0, cnt = 0;
+      for(o = -1; o <= 1; o++){
+        var gy = cy + o;
+        if(gy < 0 || gy >= rows) continue;
+        for(j = -1; j <= 1; j++){
+          var gx = cx + j;
+          if(gx < 0 || gx >= cols) continue;
+          for(var e = head[gy*cols+gx]; e >= 0; e = bs[e].next){
+            if(e === i) continue;
+            var ob = bs[e];
+            var dx = b.x-ob.x, dy = b.y-ob.y;
+            var d2 = dx*dx + dy*dy;
+            if(d2 > 1024) continue;
+            var d = Math.sqrt(d2) + 0.001;
+            if(d < 19){ sepX -= dx/d*(19-d); sepY -= dy/d*(19-d); }
+            aliX += ob.vx; aliY += ob.vy;
+            cohX += ob.x; cohY += ob.y;
+            if(++cnt > 22) break;
+          }
+        }
+      }
+
+      var ax = 0, ay = 0;
+      if(cnt > 0){
+        ax += (aliX/cnt - b.vx)*2.2;
+        ay += (aliY/cnt - b.vy)*2.2;
+        ax += (cohX/cnt - b.x)*1.0;
+        ay += (cohY/cnt - b.y)*1.0;
+      }
+      ax += sepX*28; ay += sepY*28;
+
+      var mdx = pointer.x-b.x, mdy = pointer.y-b.y;
+      var md = Math.sqrt(mdx*mdx + mdy*mdy) + 1;
+      var spd = Math.sqrt(b.vx*b.vx + b.vy*b.vy) + 0.001;
+      if(md > 130 && md < 640){
+        var mw = 1 - (md-130)/510;
+        var ux = b.vx/spd, uy = b.vy/spd;
+        var tx = mdx/md, ty = mdy/md;
+        var turn = (ux*ty - uy*tx) * 2600 * mw;
+        ax += -uy*turn;
+        ay +=  ux*turn;
+      } else if(md >= 640){
+        ax += mdx/md*300;
+        ay += mdy/md*300;
+      }
+
+      var M = 96;
+      if(b.x < M) ax += (M-b.x)*3.4;
+      else if(b.x > W-M) ax -= (b.x-(W-M))*3.4;
+      if(b.y < M) ay += (M-b.y)*3.4;
+      else if(b.y > H-M) ay -= (b.y-(H-M))*3.4;
+
+      b.vx += ax*dt; b.vy += ay*dt;
+      var sp = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
+      var mx = b.burst > 0 ? 860 : 310;
+      if(sp > mx){ b.vx = b.vx/sp*mx; b.vy = b.vy/sp*mx; }
+      else if(sp < 190 && sp > 0.001){ b.vx = b.vx/sp*190; b.vy = b.vy/sp*190; }
+      b.x += b.vx*dt; b.y += b.vy*dt;
+    }
+  },
+  draw:function(g){
+    var bs = this.boids, i;
+    g.globalCompositeOperation = 'lighter';
+    g.lineCap = 'round';
+    for(i=0;i<bs.length;i++){
+      var b = bs[i];
+      var sp = Math.sqrt(b.vx*b.vx + b.vy*b.vy) + 0.001;
+      var nx = b.vx/sp, ny = b.vy/sp;
+      var len = 2.5 + Math.min(9, sp*0.018);
+      g.strokeStyle = 'hsla(' + b.hue + ',95%,66%,.46)';
+      g.lineWidth = 1.4;
+      g.beginPath();
+      g.moveTo(b.x - nx*len, b.y - ny*len);
+      g.lineTo(b.x + nx*len*0.35, b.y + ny*len*0.35);
+      g.stroke();
+    }
+    var mx = pointer.x, my = pointer.y;
+    if(this.flash > 0){
+      g.strokeStyle = 'rgba(190,230,255,' + (this.flash*0.45).toFixed(3) + ')';
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(mx, my, (1-this.flash)*300 + 12, 0, 6.2832); g.stroke();
+    }
+    g.strokeStyle = 'rgba(200,240,255,.5)';
+    g.lineWidth = 1.2;
+    g.beginPath(); g.arc(mx, my, 15, 0, 6.2832); g.stroke();
+    g.fillStyle = 'rgba(200,240,255,.75)';
+    g.beginPath(); g.arc(mx, my, 1.8, 0, 6.2832); g.fill();
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = 'rgba(233,237,255,.34)';
+    g.font = '12.5px system-ui,"Microsoft YaHei",sans-serif';
+    g.textAlign = 'right';
+    g.fillText(bs.length + ' 只', W-26, H-30);
+    g.textAlign = 'left';
+  }
+};
+
+/* ============================================================
+   场景 4 —— 星火烟花
+   ============================================================ */
+var fireworks = {
+  name:'星火烟花',
+  hint:'点一下就放一朵 · 按住连发 · 空格全屏齐放 · 放着不管也会自动绽放',
+  fade:0.09,
+  shells:[],
+  sparks:[],
+  flashes:[],
+  autoT:0.8,
+  held:0,
+  resize:function(){
+    this.shells.length = 0;
+    this.sparks.length = 0;
+    this.flashes.length = 0;
+  },
+  key:function(k){
+    if(k === ' '){
+      for(var i=0;i<8;i++) this.launch(W*0.12 + Math.random()*W*0.76, (i*47)%360, i*0.09);
+    }
+  },
+  launch:function(x, hue, delay){
+    if(this.shells.length > 30) return;
+    if(x === undefined) x = W*0.14 + Math.random()*W*0.72;
+    var h = (hue === undefined) ? (Math.random()*360) : hue;
+    var s = {
+      x: x + (Math.random()-0.5)*56,
+      y: H + 14,
+      vx: (Math.random()-0.5)*95,
+      vy: -(770 + Math.random()*250),
+      hue: h,
+      fuse: 0.72 + Math.random()*0.55 + Math.max(0, (H-pointer.y)/5200),
+      trail: 0
+    };
+    if(delay){ setTimeout((function(f){ return function(){ f.shells.push(s); }; })(this), delay*1000); }
+    else this.shells.push(s);
+  },
+  boom:function(x, y, hue){
+    var n = 110 + Math.floor(Math.random()*70);
+    var two = Math.random() < 0.45;
+    for(var i=0;i<n;i++){
+      var a = Math.random()*6.2832;
+      var sp = 80 + Math.pow(Math.random(), 0.55)*440;
+      var hh = (two && (i % 2) === 1)
+        ? (hue + 150 + Math.random()*60) % 360
+        : (hue + (Math.random()-0.5)*40 + 360) % 360;
+      this.sparks.push({
+        x:x, y:y,
+        vx: Math.cos(a)*sp,
+        vy: Math.sin(a)*sp,
+        hue: hh,
+        life: 0.85 + Math.random()*0.95,
+        age: 0,
+        size: 1.1 + Math.random()*1.5
+      });
+    }
+    this.flashes.push({ x:x, y:y, t:0, hue:hue });
+    if(this.sparks.length > 1700) this.sparks.splice(0, this.sparks.length - 1700);
+    playKick();
+    playHat();
+  },
+  update:function(dt){
+    var i, s, p;
+    if(pointer.justDown && !pointer.ui) this.launch(pointer.x);
+    if(pointer.down && !pointer.ui){
+      this.held += dt;
+      if(this.held > 0.17){ this.held = 0; this.launch(pointer.x); }
+    } else {
+      this.held = 0;
+    }
+
+    this.autoT -= dt;
+    if(this.autoT <= 0){
+      this.launch();
+      this.autoT = 1.1 + Math.random()*1.4;
+    }
+
+    for(i=this.shells.length-1;i>=0;i--){
+      s = this.shells[i];
+      s.fuse -= dt;
+      s.vy += 430*dt;
+      s.x += s.vx*dt; s.y += s.vy*dt;
+      if(s.fuse <= 0 || s.vy > -70 || s.y < 80){
+        this.boom(s.x, s.y, s.hue);
+        this.shells.splice(i,1);
+      }
+    }
+
+    for(i=this.sparks.length-1;i>=0;i--){
+      p = this.sparks[i];
+      p.age += dt;
+      if(p.age >= p.life){ this.sparks.splice(i,1); continue; }
+      p.vy += 330*dt;
+      var drag = Math.pow(0.36, dt);
+      p.vx *= drag; p.vy *= drag;
+      p.x += p.vx*dt; p.y += p.vy*dt;
+    }
+
+    for(i=this.flashes.length-1;i>=0;i--){
+      this.flashes[i].t += dt;
+      if(this.flashes[i].t > 0.5) this.flashes.splice(i,1);
+    }
+  },
+  draw:function(g){
+    var i;
+    g.globalCompositeOperation = 'lighter';
+    g.lineCap = 'round';
+
+    for(i=0;i<this.flashes.length;i++){
+      var f = this.flashes[i], fk = 1 - f.t/0.5;
+      g.strokeStyle = 'hsla(' + f.hue + ',100%,84%,' + (fk*0.3).toFixed(3) + ')';
+      g.lineWidth = 4*fk + 0.8;
+      g.beginPath(); g.arc(f.x, f.y, 6 + (1-fk)*70, 0, 6.2832); g.stroke();
+    }
+
+    for(i=0;i<this.shells.length;i++){
+      var s = this.shells[i];
+      g.strokeStyle = 'hsla(' + s.hue + ',100%,80%,.85)';
+      g.lineWidth = 2.4;
+      g.beginPath();
+      g.moveTo(s.x - s.vx*0.02, s.y - s.vy*0.02);
+      g.lineTo(s.x, s.y);
+      g.stroke();
+      g.fillStyle = 'hsla(' + s.hue + ',100%,88%,.95)';
+      g.beginPath(); g.arc(s.x, s.y, 2.1, 0, 6.2832); g.fill();
+    }
+
+    for(i=0;i<this.sparks.length;i++){
+      var p = this.sparks[i];
+      var k = 1 - p.age/p.life;
+      var flick = 0.6 + 0.4*Math.sin(p.age*46 + p.hue);
+      var a = Math.max(0, k*flick);
+      g.strokeStyle = 'hsla(' + p.hue + ',100%,' + (46 + 28*k) + '%,' + a.toFixed(3) + ')';
+      g.lineWidth = p.size*k + 0.5;
+      g.beginPath();
+      g.moveTo(p.x - p.vx*0.014, p.y - p.vy*0.014);
+      g.lineTo(p.x + p.vx*0.006, p.y + p.vy*0.006);
+      g.stroke();
+    }
+
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = 'rgba(233,237,255,.34)';
+    g.font = '12.5px system-ui,"Microsoft YaHei",sans-serif';
+    g.textAlign = 'right';
+    g.fillText(this.sparks.length + ' 点星火', W-26, H-30);
+    g.textAlign = 'left';
+  }
+};
+
+/* ============ 场景管理 ============ */
+var scenes = [star, kaleido, flock, fireworks];
+var cur = 0;
+var tabsEl = document.getElementById('tabs');
+var hintEl = document.getElementById('hint');
+
+function setScene(i){
+  cur = ((i % scenes.length) + scenes.length) % scenes.length;
+  ctx.clearRect(0,0,W,H);
+  pointer.px = pointer.x; pointer.py = pointer.y;
+  var s = scenes[cur];
+  if(s.enter) s.enter();
+  hintEl.textContent = s.hint;
+  for(var k=0;k<tabsEl.children.length;k++){
+    tabsEl.children[k].classList.toggle('on', k === cur);
+  }
+}
+
+/* ============ 主循环 ============ */
+var last = performance.now();
+function loop(now){
+  var dt = Math.min(0.05, (now-last)/1000) || 0.016;
+  last = now;
+  var s = scenes[cur];
+
+  if(s.clear){
+    ctx.clearRect(0,0,W,H);
+  } else {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,' + s.fade + ')';
+    ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  s.update(dt);
+  s.draw(ctx);
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  pointer.justDown = false;
+  pointer.justUp = false;
+  pointer.dbl = false;
+  pointer.ui = false;
+  pointer.px = pointer.x;
+  pointer.py = pointer.y;
+
+  requestAnimationFrame(loop);
+}
+
+/* ============ 事件 ============ */
+window.addEventListener('pointerdown', function(e){
+  ensureAudio();
+  pointer.down = true;
+  pointer.x = e.clientX; pointer.y = e.clientY;
+  pointer.justDown = true;
+  pointer.ui = !!(e.target && e.target.closest && e.target.closest('button'));
+  var now = performance.now();
+  pointer.dbl = (now - lastDownTime) < 320;
+  lastDownTime = now;
+});
+var lastDownTime = 0;
+
+window.addEventListener('pointermove', function(e){
+  pointer.x = e.clientX; pointer.y = e.clientY;
+});
+window.addEventListener('pointerup', function(){ pointer.down = false; pointer.justUp = true; });
+window.addEventListener('pointercancel', function(){ pointer.down = false; });
+window.addEventListener('blur', function(){ pointer.down = false; });
+
+tabsEl.addEventListener('click', function(e){
+  var b = e.target.closest ? e.target.closest('button[data-i]') : null;
+  if(b){ setScene(parseInt(b.dataset.i,10)); b.blur(); }
+});
+
+window.addEventListener('keydown', function(e){
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  var k = e.key;
+  if(k >= '1' && k <= '4' && !e.repeat){
+    setScene(parseInt(k,10)-1);
+    e.preventDefault();
+    return;
+  }
+  if(k === 'h' || k === 'H'){ document.body.classList.toggle('zen'); return; }
+  if(k === ' '){ e.preventDefault(); }
+  var s = scenes[cur];
+  if(s.key) s.key(k, e);
+});
+
+var resizeTimer = null;
+window.addEventListener('resize', function(){
+  resizeCanvas();
+  scenes.forEach(function(s){ if(s.resize) s.resize(); });
+  if(resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function(){ ctx.clearRect(0,0,W,H); }, 120);
+});
+
+window.addEventListener('hashchange', function(){
+  var i = parseInt((location.hash || '').replace('#',''), 10);
+  if(Number.isFinite(i)) setScene(i);
+});
+
+/* ============ 启动 ============ */
+resizeCanvas();
+pointer.x = W/2; pointer.y = H/2; pointer.px = pointer.x; pointer.py = pointer.y;
+scenes.forEach(function(s){ if(s.resize) s.resize(); });
+
+var startScene = parseInt((location.hash || '').replace('#',''), 10);
+setScene(Number.isFinite(startScene) ? startScene : 0);
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
